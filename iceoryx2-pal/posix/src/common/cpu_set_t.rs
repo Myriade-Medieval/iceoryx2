@@ -49,9 +49,9 @@ impl cpu_set_t {
 
     pub(crate) fn new_allow_all() -> Self {
         Self {
-    #[cfg(not(target_env = "musl"))]
+            #[cfg(not(target_env = "musl"))]
             __bits: [0xff; CPU_SETSIZE / 8],
-    #[cfg(target_env = "musl")]
+            #[cfg(target_env = "musl")]
             __bits: [0xff; CPU_SETSIZE],
         }
     }

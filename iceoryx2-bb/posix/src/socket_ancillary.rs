@@ -263,7 +263,7 @@ impl Default for SocketAncillary {
         };
         #[cfg(target_env = "musl")]
         let message = {
-            let mut message : posix::msghdr = unsafe { core::mem::zeroed() };
+            let mut message: posix::msghdr = unsafe { core::mem::zeroed() };
             message.msg_name = core::ptr::null_mut::<posix::void>();
             message.msg_iov = core::ptr::null_mut();
             message.msg_iovlen = IOVEC_BUFFER_CAPACITY as _;

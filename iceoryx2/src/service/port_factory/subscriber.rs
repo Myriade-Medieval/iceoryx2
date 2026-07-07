@@ -38,6 +38,7 @@ use iceoryx2_log::fail;
 use crate::{
     port::{
         DegradationAction, DegradationFn, DegradationHandler,
+        port_name::PortName,
         subscriber::{Subscriber, SubscriberCreateError},
     },
     service,
@@ -48,7 +49,9 @@ use super::publish_subscribe::PortFactory;
 #[derive(Debug)]
 pub(crate) struct SubscriberConfig {
     pub(crate) buffer_size: Option<usize>,
+    pub(crate) history_request: Option<usize>,
     pub(crate) degradation_handler: DegradationHandler<'static>,
+    pub(crate) port_name: PortName,
 }
 
 /// Factory to create a new [`Subscriber`] port/endpoint for
@@ -88,7 +91,9 @@ impl<
         Self {
             config: SubscriberConfig {
                 buffer_size: self.config.buffer_size,
+                history_request: self.config.history_request,
                 degradation_handler: DegradationHandler::new_with(DegradationAction::Warn),
+                port_name: self.config.port_name,
             },
             factory: self.factory,
         }
@@ -98,7 +103,9 @@ impl<
         Self {
             config: SubscriberConfig {
                 buffer_size: None,
+                history_request: None,
                 degradation_handler: DegradationHandler::new_with(DegradationAction::Warn),
+                port_name: PortName::new_empty(),
             },
             factory,
         }
@@ -110,12 +117,25 @@ impl<
         self
     }
 
+    /// Defines the amount of requested history samples. By default the value defined with the
+    /// service's `history_size` is used.
+    pub fn history_request(mut self, value: usize) -> Self {
+        self.config.history_request = Some(value);
+        self
+    }
+
     /// Sets the [`DegradationHandler`] of the [`Subscriber`]. Whenever a connection to a
     /// [`crate::port::subscriber::Subscriber`] is corrupted or it seems to be dead, this handler
     /// is called and depending on the returned [`DegradationAction`] measures will be taken.
     pub fn set_degradation_handler<F: DegradationFn + 'static>(mut self, handler: F) -> Self {
         self.config.degradation_handler = DegradationHandler::new(handler);
 
+        self
+    }
+
+    /// Sets the [`PortName`] of the  [`Subscriber`].
+    pub fn name(mut self, name: &PortName) -> Self {
+        self.config.port_name = *name;
         self
     }
 

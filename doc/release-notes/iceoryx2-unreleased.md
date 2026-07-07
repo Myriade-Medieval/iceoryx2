@@ -15,12 +15,14 @@
 
 * [#820](https://github.com/eclipse-iceoryx/iceoryx2/issues/820) Allow restricting the tunnel to a configurable allowlist of services via `Config::services` and the `--service`/`-s` flag on `iox2 tunnel zenoh`
 * [#925](https://github.com/eclipse-iceoryx/iceoryx2/issues/925) Adjust event API and guarantee that events can be always delivered.
+* [#1185](https://github.com/eclipse-iceoryx/iceoryx2/issues/1185) Make history configurable per subscriber
 * [#1584](https://github.com/eclipse-iceoryx/iceoryx2/issues/1584) Introduce `Node::force_remove_service` to remove corrupted services manually.
 * [#1544](https://github.com/eclipse-iceoryx/iceoryx2/issues/1544) Announce service removal over the tunnel to remote hosts
 * [#1616](https://github.com/eclipse-iceoryx/iceoryx2/issues/1616) Add reactive execution mode to tunnel
 * [#1649](https://github.com/eclipse-iceoryx/iceoryx2/issues/1649) Add `IOX2_DEFINE_TYPE_NAME` to the C++ bindings to set the cross-language type name for types that cannot carry an `IOX2_TYPE_NAME` member
 * [#1707](https://github.com/eclipse-iceoryx/iceoryx2/issues/1707) Expose `CustomHeaderMarker` and `CustomPayloadMarker` in C++ bindings
 * [#1722](https://github.com/eclipse-iceoryx/iceoryx2/issues/1722) Remove allocations in tunnel hot path
+* [#1773](https://github.com/eclipse-iceoryx/iceoryx2/issues/1773) Make ports identifiable by name
 
 ### Bugfixes
 
@@ -37,6 +39,12 @@
 * [#1718](https://github.com/eclipse-iceoryx/iceoryx2/issues/1718) Protect `ProcessState` from accidental file lock release.
 * [#1739](https://github.com/eclipse-iceoryx/iceoryx2/issues/1739) Make sure MSVC defines __cplusplus with accurate value
 * [#1746](https://github.com/eclipse-iceoryx/iceoryx2/issues/1746) Disable `POSIX_SUPPORT_FILE_LOCK_FOR_SHARED_MEMORY` on FreeBSD and move CI job for FreeBSD to main pipeline
+* [#1757](https://github.com/eclipse-iceoryx/iceoryx2/issues/1757) Enable running multiple iceoryx2 versions in distinct domains in parallel by adding a version suffix to the global mgmt segment
+* [#1763](https://github.com/eclipse-iceoryx/iceoryx2/issues/1763) Close `ActiveRequest-PendingResponse` connection when dead process is cleaned up.
+* [#1765](https://github.com/eclipse-iceoryx/iceoryx2/issues/1765) Remove unnecessary `fsync` on file open
+* [#1770](https://github.com/eclipse-iceoryx/iceoryx2/issues/1770) Fix logging in python module.
+* [#1777](https://github.com/eclipse-iceoryx/iceoryx2/issues/1777) Fix service root folder creation named concept of iceoryx2-cal fixing execution on Windows platform.
+* [#1786](https://github.com/eclipse-iceoryx/iceoryx2/issues/1786) Disable transport_compression feature in Zenoh.
 
 ### Refactoring
 
@@ -46,6 +54,7 @@
 -->
 
 * [#996](https://github.com/eclipse-iceoryx/iceoryx2/issues/996) Move BumpAllocator from iceoryx2-bb-memory into iceoryx2-bb-elementary
+* [#1776](https://github.com/eclipse-iceoryx/iceoryx2/issues/1776) Rename AtomicCopy::__for_each_field() to for_each_field()
 
 ### Workflow
 
@@ -100,13 +109,13 @@
 1. The `bump_allocator` module in the `iceoryx2-cal` package
  has been renamed to shm_bump_allocator.
 
-  ```rust
-  // old
-  use iceoryx2_cal::shm_allocator::bump_allocator::BumpAllocator;
+    ```rust
+    // old
+    use iceoryx2_cal::shm_allocator::bump_allocator::BumpAllocator;
 
-  // new
-  use iceoryx2_cal::shm_allocator::shm_bump_allocator::BumpAllocator;
-  ```
+    // new
+    use iceoryx2_cal::shm_allocator::shm_bump_allocator::BumpAllocator;
+    ```
 
 1. `Listener::{try|timed|blocking}_wait_one` has been removed and `Listener::{try|timed|blocking}_wail_all`
    has been renamed to `Listener::{try|timed|blocking}_wait`. The input argument has changed from `EventId`
@@ -151,6 +160,32 @@
         super::TestBackend<super::Ipc>,
         super::Testing
     );
+    ```
+
+1. `AtomicCopy::__for_each_field()` was renamed to `for_each_field()`.
+
+    ```rust
+    // old
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    struct Foo {
+        bar: u8,
+        baz: u64,
+    }
+    
+    unsafe impl AtomicCopy for Foo {
+        fn __for_each_field<F: FnMut(usize, usize)>(&self, base_offset: usize, callback: &mut F) {
+            // ...
+        }
+    }
+    
+    // new
+    // ...
+    unsafe impl AtomicCopy for Foo {
+        fn for_each_field<F: FnMut(usize, usize)>(&self, base_offset: usize, callback: &mut F) {
+            // ...
+        }
+    }
     ```
 
 <!-- markdownlint-enable MD013 -->

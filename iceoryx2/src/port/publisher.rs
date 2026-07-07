@@ -118,7 +118,6 @@ use iceoryx2_bb_elementary_traits::non_null::NonNullCompat;
 use iceoryx2_bb_elementary_traits::testing::abandonable::Abandonable;
 use iceoryx2_bb_elementary_traits::zero_copy_send::ZeroCopySend;
 use iceoryx2_bb_lock_free::mpmc::container::{ContainerHandle, ContainerState};
-use iceoryx2_bb_posix::unique_system_id::UniqueSystemId;
 use iceoryx2_cal::arc_sync_policy::ArcSyncPolicy;
 use iceoryx2_cal::dynamic_storage::DynamicStorage;
 use iceoryx2_cal::shm_allocator::{AllocationStrategy, PointerOffset};
@@ -128,6 +127,7 @@ use iceoryx2_cal::zero_copy_connection::{
 use iceoryx2_log::{fail, warn};
 
 use crate::port::details::sender::*;
+use crate::port::port_name::PortName;
 use crate::port::update_connections::{ConnectionFailure, UpdateConnections};
 use crate::prelude::BackpressureStrategy;
 use crate::raw_sample::RawSampleMut;
@@ -235,7 +235,7 @@ impl<Service: service::Service> PublisherSharedState<Service> {
                         port_id: port.subscriber_id.value(),
                         buffer_size: port.buffer_size,
                     },
-                    |connection| self.deliver_sample_history(connection),
+                    |connection| self.deliver_sample_history(connection, port.history_request),
                 );
 
                 if result.is_ok() {
@@ -268,13 +268,14 @@ impl<Service: service::Service> PublisherSharedState<Service> {
         Ok(())
     }
 
-    fn deliver_sample_history(&self, connection: &Connection<Service>) {
+    fn deliver_sample_history(&self, connection: &Connection<Service>, history_request: usize) {
         match &self.history {
             None => (),
             Some(history) => {
                 let history = unsafe { &mut *history.get() };
                 let buffer_size = connection.sender.buffer_size();
-                let history_start = history.len().saturating_sub(buffer_size);
+                let history_deliver_count = history_request.min(buffer_size);
+                let history_start = history.len().saturating_sub(history_deliver_count);
 
                 for i in history_start..history.len() {
                     let old_sample = unsafe { history.get_unchecked(i) };
@@ -330,7 +331,8 @@ pub struct Publisher<
 > {
     pub(crate) publisher_shared_state:
         Service::ArcThreadSafetyPolicy<PublisherSharedState<Service>>,
-    dynamic_publisher_handle: Option<ContainerHandle>,
+    dynamic_publisher_handle: ContainerHandle,
+    publisher_details: &'static PublisherDetails,
     _payload: PhantomData<Payload>,
     _user_header: PhantomData<UserHeader>,
 }
@@ -380,15 +382,13 @@ impl<
     fn drop(&mut self) {
         let shared_state = self.publisher_shared_state.lock();
         shared_state.is_active.store(false, Ordering::Relaxed);
-        if let Some(handle) = self.dynamic_publisher_handle {
-            shared_state
-                .sender
-                .service_state
-                .dynamic_storage()
-                .get()
-                .publish_subscribe()
-                .release_publisher_handle(handle)
-        }
+        shared_state
+            .sender
+            .service_state
+            .dynamic_storage()
+            .get()
+            .publish_subscribe()
+            .release_publisher_handle(self.dynamic_publisher_handle)
     }
 }
 
@@ -455,6 +455,7 @@ impl<
         let publisher_details = PublisherDetails {
             data_segment_type,
             publisher_id: port_id,
+            publisher_name: config.port_name,
             number_of_samples,
             max_slice_len,
             node_id: *service.shared_node().id(),
@@ -536,19 +537,8 @@ impl<
             }
         };
 
-        let mut new_self = Self {
-            publisher_shared_state,
-            dynamic_publisher_handle: None,
-            _payload: PhantomData,
-            _user_header: PhantomData,
-        };
-
-        if let Err(e) = new_self
-            .publisher_shared_state
-            .lock()
-            .force_update_connections()
-        {
-            warn!(from new_self,
+        if let Err(e) = publisher_shared_state.lock().force_update_connections() {
+            warn!(from origin,
                 "The new Publisher port is unable to connect to every Subscriber port, caused by {:?}.", e);
         }
 
@@ -556,13 +546,13 @@ impl<
 
         // !MUST! be the last task otherwise a publisher is added to the dynamic config without the
         // creation of all required resources
-        let dynamic_publisher_handle = match service
+        let (details, handle) = match service
             .dynamic_storage()
             .get()
             .publish_subscribe()
             .add_publisher_id(publisher_details)
         {
-            Some(unique_index) => unique_index,
+            Some(v) => v,
             None => {
                 fail!(from origin, with PublisherCreateError::ExceedsMaxSupportedPublishers,
                             "{} since it would exceed the maximum supported amount of publishers of {}.",
@@ -570,16 +560,23 @@ impl<
             }
         };
 
-        new_self.dynamic_publisher_handle = Some(dynamic_publisher_handle);
-
-        Ok(new_self)
+        Ok(Self {
+            publisher_shared_state,
+            dynamic_publisher_handle: handle,
+            publisher_details: unsafe { &*details },
+            _payload: PhantomData,
+            _user_header: PhantomData,
+        })
     }
 
     /// Returns the [`UniquePublisherId`] of the [`Publisher`]
     pub fn id(&self) -> UniquePublisherId {
-        UniquePublisherId(UniqueSystemId::from(
-            self.publisher_shared_state.lock().sender.sender_port_id,
-        ))
+        self.publisher_details.publisher_id
+    }
+
+    /// Returns the [`PortName`] of the [`Publisher`]
+    pub fn name(&self) -> &PortName {
+        &self.publisher_details.publisher_name
     }
 
     /// Returns the strategy the [`Publisher`] follows when a [`SampleMut`] cannot be delivered
